@@ -1,0 +1,18 @@
+# Browser session — contains login cookies, never commit
+browser_profile/
+
+# Output files
+report.json
+screenshots/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db

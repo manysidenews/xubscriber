@@ -1,0 +1,7 @@
+# One Twitter/X username per line.
+# Lines starting with # are ignored.
+# The @ prefix is optional.
+
+elonmusk
+@paulg
+sama
