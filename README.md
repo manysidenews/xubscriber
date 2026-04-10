@@ -60,7 +60,12 @@ SUMMARY
   Failed:              0
 
 [*] Report saved to report.json
+[*] Updated account files: removed 3 from accounts.txt, appended 2 to accounts added.txt
 ```
+
+At the end of the run, all accounts with status `followed` or `already_following` are removed from the input file and appended to `accounts added.txt`.
+
+Before browser automation starts, `follow.py` also removes any username from the source file if it is already present in `accounts added.txt`, so those accounts are never opened on X again.
 
 ## Options
 
@@ -76,7 +81,9 @@ SUMMARY
 |---|---|---|
 | `--delay` | `2.0` | Seconds to wait between page actions. Increase if you hit rate limits. |
 | `--report` | `report.json` | Path for the JSON results file |
+| `--added-accounts-file` | `accounts added.txt` | Destination file for accounts that were followed/already-following |
 | `--profile-dir` | `./browser_profile` | Must match the directory used in `login.py` |
+| `--max-consecutive-failures` | `3` | Abort early after this many consecutive `failed` results |
 
 ## Report format
 
@@ -89,9 +96,26 @@ SUMMARY
   "not_found": ["ghost"],
   "failed": [
     { "username": "someuser", "status": "failed", "note": "page load timeout" }
-  ]
+  ],
+  "aborted": true,
+  "skipped": 17
 }
 ```
+
+`aborted` and `skipped` are present only when the run stops early due to `--max-consecutive-failures`.
+
+## Automatic Account List Sync
+
+Before each run, `follow.py` first removes usernames from the source accounts file when they already exist in `accounts added.txt` (case-insensitive, with optional `@` handling). Those are skipped entirely and never opened in X.
+
+After each run, `follow.py` then moves all usernames that ended as `followed` or `already_following`:
+
+- Removed from the source accounts file you passed (for example `accounts.txt`)
+- Appended to `accounts added.txt` (or your `--added-accounts-file` path)
+- Compared case-insensitively to avoid duplicate append entries
+- `accounts added.txt` is created automatically if it does not exist
+
+If a run aborts early, only accounts that were actually processed before the abort are moved.
 
 ## Result codes
 
@@ -127,6 +151,7 @@ xubscriber/
 ├── login.py          # Step 1: open browser and log in manually
 ├── follow.py         # Step 2: follow all accounts in a list
 ├── accounts.txt      # Your list of usernames (edit this)
+├── accounts added.txt # Auto-filled: already processed/followed accounts
 ├── requirements.txt  # Python dependencies
 ├── browser_profile/  # Saved Chrome session (created by login.py)
 ├── screenshots/      # Debug screenshots for failed accounts

@@ -69,6 +69,114 @@ def load_accounts(path: str) -> list[str]:
     return accounts
 
 
+def parse_username_line(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    return stripped.lstrip("@")
+
+
+def move_processed_accounts(accounts_file: str, added_file: str, report: Report) -> tuple[int, int, int]:
+    """
+    Move followed and already-following usernames from accounts_file to added_file.
+
+    Returns:
+        (removed_count, appended_count, already_present_count)
+    """
+    ordered_to_move: list[str] = []
+    seen: set[str] = set()
+    for username in report.followed + report.already_following:
+        key = username.lower()
+        if key not in seen:
+            seen.add(key)
+            ordered_to_move.append(username)
+
+    if not ordered_to_move:
+        return 0, 0, 0
+
+    move_keys = {u.lower() for u in ordered_to_move}
+
+    source_path = Path(accounts_file)
+    source_lines = source_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    kept_lines: list[str] = []
+    removed_count = 0
+    for line in source_lines:
+        username = parse_username_line(line)
+        if username and username.lower() in move_keys:
+            removed_count += 1
+            continue
+        kept_lines.append(line)
+    source_path.write_text("".join(kept_lines), encoding="utf-8")
+
+    target_path = Path(added_file)
+    if not target_path.exists():
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.touch()
+    existing_text = target_path.read_text(encoding="utf-8")
+    existing_usernames: set[str] = set()
+    for line in existing_text.splitlines():
+        username = parse_username_line(line)
+        if username:
+            existing_usernames.add(username.lower())
+
+    lines_to_append: list[str] = []
+    already_present_count = 0
+    for username in ordered_to_move:
+        key = username.lower()
+        if key in existing_usernames:
+            already_present_count += 1
+            continue
+        lines_to_append.append(f"@{username}")
+        existing_usernames.add(key)
+
+    appended_count = len(lines_to_append)
+    if appended_count:
+        with target_path.open("a", encoding="utf-8") as f:
+            if existing_text and not existing_text.endswith("\n"):
+                f.write("\n")
+            f.write("\n".join(lines_to_append))
+            f.write("\n")
+
+    return removed_count, appended_count, already_present_count
+
+
+def prune_accounts_already_added(accounts_file: str, added_file: str) -> int:
+    """
+    Remove usernames from accounts_file if they already exist in added_file.
+
+    Matching is case-insensitive and ignores an optional leading '@'.
+    Returns the number of removed username lines.
+    """
+    added_path = Path(added_file)
+    if not added_path.exists():
+        return 0
+
+    added_usernames: set[str] = set()
+    for line in added_path.read_text(encoding="utf-8").splitlines():
+        username = parse_username_line(line)
+        if username:
+            added_usernames.add(username.lower())
+
+    if not added_usernames:
+        return 0
+
+    source_path = Path(accounts_file)
+    source_lines = source_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    kept_lines: list[str] = []
+    removed_count = 0
+    for line in source_lines:
+        username = parse_username_line(line)
+        if username and username.lower() in added_usernames:
+            removed_count += 1
+            continue
+        kept_lines.append(line)
+
+    if removed_count:
+        source_path.write_text("".join(kept_lines), encoding="utf-8")
+
+    return removed_count
+
+
 
 def find_button_by_label(page, pattern: re.Pattern):
     """Return the first button whose aria-label matches pattern, or None."""
@@ -169,7 +277,7 @@ def build_report(results: list[AccountResult]) -> Report:
     return report
 
 
-def print_summary(report: Report) -> None:
+def print_summary(report: Report, skipped: int = 0) -> None:
     print("\n" + "=" * 50)
     print("SUMMARY")
     print("=" * 50)
@@ -177,6 +285,8 @@ def print_summary(report: Report) -> None:
     print(f"  Already following:   {len(report.already_following)}")
     print(f"  Not found:           {len(report.not_found)}")
     print(f"  Failed:              {len(report.failed)}")
+    if skipped:
+        print(f"  Skipped (aborted):   {skipped}")
 
     if report.not_found:
         print("\nNot found:")
@@ -190,13 +300,16 @@ def print_summary(report: Report) -> None:
             print(f"    @{r.username}{note}")
 
 
-def save_report(report: Report, path: str) -> None:
+def save_report(report: Report, path: str, skipped: int = 0) -> None:
     data = {
         "followed": report.followed,
         "already_following": report.already_following,
         "not_found": report.not_found,
         "failed": [asdict(r) for r in report.failed],
     }
+    if skipped:
+        data["aborted"] = True
+        data["skipped"] = skipped
     Path(path).write_text(json.dumps(data, indent=2))
     print(f"\n[*] Report saved to {path}")
 
@@ -216,14 +329,35 @@ def main() -> None:
         help="Path to write the JSON report (default: report.json)",
     )
     parser.add_argument(
+        "--added-accounts-file",
+        default="accounts added.txt",
+        help='Path to append followed/already-following usernames (default: "accounts added.txt")',
+    )
+    parser.add_argument(
         "--profile-dir",
         default="./browser_profile",
         help="Directory for persistent browser profile to preserve login sessions",
     )
+    parser.add_argument(
+        "--max-consecutive-failures",
+        type=int,
+        default=3,
+        help="Stop execution after this many consecutive failures (default: 3)",
+    )
     args = parser.parse_args()
+
+    pre_removed_count = prune_accounts_already_added(args.accounts_file, args.added_accounts_file)
+    if pre_removed_count:
+        print(
+            f"[*] Removed {pre_removed_count} account(s) from {args.accounts_file} "
+            f"because they already exist in {args.added_accounts_file}"
+        )
 
     accounts = load_accounts(args.accounts_file)
     if not accounts:
+        if pre_removed_count:
+            print("[*] No new accounts left to process after pre-run cleanup.")
+            sys.exit(0)
         print("No accounts found in the file.")
         sys.exit(1)
 
@@ -261,18 +395,41 @@ def main() -> None:
 
         print(f"\n[*] Starting to follow {len(accounts)} account(s)...\n")
 
+        consecutive_failures = 0
+        aborted = False
         for i, username in enumerate(accounts, start=1):
             result = check_and_follow(page, username, args.delay)
             results.append(result)
             print_progress(result, i, len(accounts))
-            # Small extra pause between accounts to be gentle on rate limits
+
+            if result.status == Status.FAILED:
+                consecutive_failures += 1
+                if consecutive_failures >= args.max_consecutive_failures:
+                    print(f"\n[!] {consecutive_failures} consecutive failures — aborting early.")
+                    aborted = True
+                    break
+            else:
+                consecutive_failures = 0
+
             time.sleep(args.delay * 0.5)
 
         context.close()
 
     report = build_report(results)
-    print_summary(report)
-    save_report(report, args.report)
+    skipped = len(accounts) - len(results)
+    print_summary(report, skipped=skipped if aborted else 0)
+    save_report(report, args.report, skipped=skipped if aborted else 0)
+    removed_count, appended_count, already_present_count = move_processed_accounts(
+        args.accounts_file,
+        args.added_accounts_file,
+        report,
+    )
+    print(
+        f"[*] Updated account files: removed {removed_count} from {args.accounts_file}, "
+        f"appended {appended_count} to {args.added_accounts_file}"
+    )
+    if already_present_count:
+        print(f"[*] Skipped {already_present_count} already present in {args.added_accounts_file}")
 
 
 if __name__ == "__main__":

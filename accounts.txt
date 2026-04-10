@@ -2,6 +2,32 @@
 # Lines starting with # are ignored.
 # The @ prefix is optional.
 
-elonmusk
-@paulg
-sama
+
+
+@piersmorgan
+@RubinReport
+@jordanbpeterson
+@Heminator
+@townhallcom
+@bpolitics
+@FoxNews
+@nytimes
+@washingtonpost
+@WSJ
+@NewYorker
+@TheAtlantic
+@TheNation
+@NRO
+@NPR
+@PBS
+@BBCWorld
+@theintercept
+@propublica
+@politico
+@thehill
+@axios
+@Semafor
+@Mediaite
+@DailySignal
+@DailyWirePlus
+@BlazeTV
