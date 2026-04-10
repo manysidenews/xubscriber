@@ -67,6 +67,20 @@ At the end of the run, all accounts with status `followed` or `already_following
 
 Before browser automation starts, `follow.py` also removes any username from the source file if it is already present in `accounts added.txt`, so those accounts are never opened on X again.
 
+### Optional — Clean accounts list only
+
+If you want to only remove accounts from `accounts.txt` that already exist in `accounts added.txt` (without opening a browser), run:
+
+```bash
+python prune_accounts.py
+```
+
+You can also pass custom file paths:
+
+```bash
+python prune_accounts.py --accounts-file my_accounts.txt --added-accounts-file "accounts added.txt"
+```
+
 ## Options
 
 ### `login.py`
@@ -150,6 +164,7 @@ Browser sessions last weeks or months normally. If yours expires, just run `logi
 xubscriber/
 ├── login.py          # Step 1: open browser and log in manually
 ├── follow.py         # Step 2: follow all accounts in a list
+├── prune_accounts.py # Utility: remove already-added accounts from source list
 ├── accounts.txt      # Your list of usernames (edit this)
 ├── accounts added.txt # Auto-filled: already processed/followed accounts
 ├── requirements.txt  # Python dependencies
